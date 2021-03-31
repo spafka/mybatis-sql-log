@@ -1,4 +1,18 @@
+/*
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
 package com.mybatis.spring.boot.autoconfigure;
+
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.executor.statement.StatementHandler;
@@ -16,33 +30,37 @@ import org.springframework.util.ReflectionUtils;
 
 import java.lang.reflect.Field;
 import java.sql.Statement;
-import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
-import java.util.regex.Matcher;
 
-/**
- * 这里没有使用拦截 {@link org.apache.ibatis.executor.Executor 主要是因为PageHelp处理的时候，直接调用Executor的方法进行处理，没有调用invocation.proceed() 下一个拦截器处理，直接处理SQL
- * 的修改，因此，将这个拦截设置到最后的查询阶段去处理哦}
- * {@linkplain com.github.pagehelper.PageInterceptor executor.query(ms, parameter, rowBounds, resultHandler, cacheKey, boundSql) }
- *
- * 因此拦截StatementHandler 肯定不会错误【StatementHandler，语句处理器负责和JDBC层具体交互，包括prepare语句，执行语句，以及调用ParameterHandler.parameterize()设置参数】
- */
+
 @Intercepts({@Signature(type = StatementHandler.class, method = "query", args = {Statement.class, ResultHandler.class}),
         @Signature(type = StatementHandler.class, method = "update", args = {Statement.class}),
         @Signature(type = StatementHandler.class, method = "batch", args = {Statement.class})})
 @Slf4j
+@SuppressWarnings("PMD")
 public class MybatisSqlCompletePrintInterceptor implements Interceptor, Ordered {
 
-    private Configuration configuration =null;
+    public static final String DEFAULT_DATETIME_FORMAT = "yyyy-MM-dd HH:mm:ss";
 
-    private static final ThreadLocal<SimpleDateFormat> DATE_FORMAT_THREAD_LOCAL = new ThreadLocal<SimpleDateFormat>() {
-        @Override
-        protected SimpleDateFormat initialValue() {
-            return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+    private static final DateTimeFormatter ddf = DateTimeFormatter.ofPattern(DEFAULT_DATETIME_FORMAT);
+
+    private Configuration configuration = null;
+
+    static boolean druidExists = false;
+
+    static {
+        try {
+            Class.forName("com.alibaba.druid.sql.SQLUtils");
+            druidExists = true;
+        } catch (ClassNotFoundException e) {
+            druidExists = false;
         }
-    };
+    }
 
     @Override
     public Object intercept(Invocation invocation) throws Throwable {
@@ -51,22 +69,36 @@ public class MybatisSqlCompletePrintInterceptor implements Interceptor, Ordered 
         try {
             return invocation.proceed();
         } finally {
-            long endTime = System.currentTimeMillis();
-            long sqlCost = endTime - startTime;
+            if (log.isDebugEnabled()) {
+                long endTime = System.currentTimeMillis();
+                long sqlCost = endTime - startTime;
 
-            StatementHandler statementHandler = (StatementHandler) target;
-            BoundSql boundSql = statementHandler.getBoundSql();
+                StatementHandler statementHandler = (StatementHandler) target;
+                BoundSql boundSql = statementHandler.getBoundSql();
 
-            if(configuration ==null){
-                final DefaultParameterHandler parameterHandler = (DefaultParameterHandler) statementHandler.getParameterHandler();
-                Field configurationField = ReflectionUtils.findField(parameterHandler.getClass(), "configuration");
-                ReflectionUtils.makeAccessible(configurationField);
-                 this.configuration =  (Configuration) configurationField.get(parameterHandler);
+
+                if (configuration == null) {
+                    final DefaultParameterHandler parameterHandler = (DefaultParameterHandler) statementHandler.getParameterHandler();
+                    Field configurationField = ReflectionUtils.findField(parameterHandler.getClass(), "configuration");
+                    ReflectionUtils.makeAccessible(configurationField);
+                    this.configuration = (Configuration) configurationField.get(parameterHandler);
+                }
+
+
+                //替换参数格式化Sql语句，去除换行符
+                String sql = formatSql(boundSql, configuration);
+
+                if (druidExists) {
+                    sql = com.alibaba.druid.sql.SQLUtils.formatMySql(sql);
+                }
+                String mybatisPlusSql = sql.replaceAll("\\s+", " ").replaceAll("` ", "`");
+
+                log.info("\n------------------------------------\n\n{}\n\n------------------------------------ cost {}ms\n",
+                        mybatisPlusSql
+                        , sqlCost
+                );
+
             }
-
-            //替换参数格式化Sql语句，去除换行符
-            String sql = formatSql(boundSql, configuration);
-            log.info("SQL:{}    执行耗时={}", sql, sqlCost);
         }
     }
 
@@ -101,8 +133,6 @@ public class MybatisSqlCompletePrintInterceptor implements Interceptor, Ordered 
 
         TypeHandlerRegistry typeHandlerRegistry = configuration.getTypeHandlerRegistry();
 
-        // 美化sql
-        sql = beautifySql(sql);
         /**
          * @see org.apache.ibatis.scripting.defaults.DefaultParameterHandler 参考Mybatis 参数处理
          */
@@ -122,31 +152,19 @@ public class MybatisSqlCompletePrintInterceptor implements Interceptor, Ordered 
                         value = metaObject.getValue(propertyName);
                     }
                     String paramValueStr = "";
-                    if(value instanceof String){
+                    if (value instanceof String) {
                         paramValueStr = "'" + value + "'";
-                    }else if (value instanceof Date) {
-                        paramValueStr = "'" + DATE_FORMAT_THREAD_LOCAL.get().format(value) + "'";
+                    } else if (value instanceof Date) {
+                        Date date = (Date) (value);
+                        LocalDateTime localDateTime = date.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
+                        paramValueStr = "'" + ddf.format(localDateTime) + "'";
                     } else {
-                        paramValueStr =  value + "";
+                        paramValueStr = value + "";
                     }
-                    // mybatis generator 中的参数不打印出来
-                    if(!propertyName.contains("frch_criterion")){
-                        paramValueStr = "/*" + propertyName + "*/" + paramValueStr;
-                    }
-                    // java.lang.IllegalArgumentException: Illegal group reference
-                    // https://github.com/WangJi92/mybatis-sql-log/issues/4
-                    sql = sql.replaceFirst("\\?", Matcher.quoteReplacement(paramValueStr));
+                    sql = sql.replaceFirst("\\?", paramValueStr);
                 }
             }
         }
-        return sql;
-    }
-
-    /**
-     * 美化Sql
-     */
-    private String beautifySql(String sql) {
-        sql = sql.replaceAll("[\\s\n ]+", " ");
         return sql;
     }
 
@@ -155,4 +173,7 @@ public class MybatisSqlCompletePrintInterceptor implements Interceptor, Ordered 
     public int getOrder() {
         return Ordered.HIGHEST_PRECEDENCE;
     }
+
+
 }
+
