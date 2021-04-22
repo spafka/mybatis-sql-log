@@ -1,1 +1,2 @@
-org.springframework.boot.autoconfigure.EnableAutoConfiguration=com.mybatis.spring.boot.autoconfigure.MybatisSqlPrintAutoConfiguration
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=com.mybatis.spring.boot.autoconfigure.MybatisSqlPrintAutoConfiguration,\
+  io.github.spring.boot.common.aspect.ControllerLogAutoConfiguration

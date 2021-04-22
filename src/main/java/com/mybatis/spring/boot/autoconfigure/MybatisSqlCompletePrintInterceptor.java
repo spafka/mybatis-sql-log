@@ -30,6 +30,7 @@ import org.springframework.util.ReflectionUtils;
 
 import java.lang.reflect.Field;
 import java.sql.Statement;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -158,7 +159,15 @@ public class MybatisSqlCompletePrintInterceptor implements Interceptor, Ordered 
                         Date date = (Date) (value);
                         LocalDateTime localDateTime = date.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
                         paramValueStr = "'" + ddf.format(localDateTime) + "'";
-                    } else {
+                    } else if (value instanceof LocalDateTime) {
+                        LocalDateTime date = (LocalDateTime) (value);
+                      paramValueStr = "'" + ddf.format(date) + "'";
+                    }
+                    else if (value instanceof LocalDate) {
+                        LocalDate date = (LocalDate) (value);
+                        paramValueStr = "'" + ddf.format(date) + "'";
+                    }
+                    else {
                         paramValueStr = value + "";
                     }
                     sql = sql.replaceFirst("\\?", paramValueStr);
@@ -173,7 +182,5 @@ public class MybatisSqlCompletePrintInterceptor implements Interceptor, Ordered 
     public int getOrder() {
         return Ordered.HIGHEST_PRECEDENCE;
     }
-
-
 }
 
