@@ -19,6 +19,7 @@ package io.github.spring.boot.common.aspect;
 
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.spring.boot.common.aspect.view.ObjectView;
 import io.vavr.Tuple2;
 import io.vavr.collection.Stream;
 import io.vavr.control.Try;
@@ -38,6 +39,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.context.request.RequestContextHolder;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -46,6 +48,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -76,7 +79,6 @@ public class ControllerAop {
     public Object intoControllerLog(ProceedingJoinPoint point) throws Throwable {
 
         Throwable throwable = null;
-        long start = System.currentTimeMillis();
 
         MethodInvocationProceedingJoinPoint mjp = (MethodInvocationProceedingJoinPoint) point;
         MethodSignature signature = (MethodSignature) mjp.getSignature();
@@ -90,13 +92,13 @@ public class ControllerAop {
         Parameter[] parameters = method.getParameters();
 
 
-        val sb=new StringBuilder();
+        val sb = new StringBuilder();
 
         ClassPool pool = ClassPool.getDefault();
         CtClass cc = pool.get(clazz);
 
         Class<?>[] parameterTypes = method.getParameterTypes();
-        CtMethod methodX = cc.getDeclaredMethod(method.getName(), Arrays.stream(parameterTypes).map(x-> {
+        CtMethod methodX = cc.getDeclaredMethod(method.getName(), Arrays.stream(parameterTypes).map(x -> {
             try {
                 return pool.get(x.getName());
             } catch (NotFoundException e) {
@@ -106,12 +108,12 @@ public class ControllerAop {
         int line = methodX.getMethodInfo().getLineNumber(0);
 
         // 类名+方法名
-        sb.append("at "+clazz+"."+method.getName())
+        sb.append("at " + clazz + "." + method.getName())
                 .append("(")
-                .append(method.getDeclaringClass().getSimpleName()+".java")
+                .append(method.getDeclaringClass().getSimpleName() + ".java")
                 .append(":")
                 .append(line)
-                .append(")").toString();
+                .append(")");
         List<Tuple2<Parameter, Integer>> params = Stream.ofAll(Arrays.stream(parameters)).zipWithIndex().filter(x -> Try.of(
                 () -> (args[x._2] instanceof Serializable)
                         && !(args[x._2] instanceof BindingResult)
@@ -121,14 +123,11 @@ public class ControllerAop {
                 )
         ).getOrElse(false)).collect(Collectors.toList());
 
-        String requestURI = request.getRequestURI();
-                sb.append(requestURI + " >>>>>>>>>\n");
-        params.forEach(x -> {
-            try {
-                sb.append("    " + x._1.getName() + ": " + objectMapper.writeValueAsString(args[x._2]));
-            } catch (Exception e) {
-                //
-            }
+        Object[] objects = params.stream().map(x -> args[x._2]).toArray();
+
+        Optional.ofNullable(RequestContextHolder.getRequestAttributes()).ifPresent(x -> {
+            String requestURI = request.getRequestURI();
+            sb.append("\n").append(requestURI);
         });
 
 
@@ -140,17 +139,8 @@ public class ControllerAop {
             throwable = e;
         }
         if (throwable == null) {
-            String s1 = objectMapper.writeValueAsString(result);
-            if (s1.length() > 1000) {
-                sb.append("\n<<<<<<<<<< \n      ").append(s1, 0, 1000).append("..... \n");
-            } else {
-                sb.append("\n<<<<<<<<<< \n      ").append(s1).append("\n");
-            }
-            sb.append("cost ").append(System.currentTimeMillis() - start).append(" ms");
+            log.info("{} \n {}  \n {}",sb, new ObjectView(objects, 10).draw(), new ObjectView(result, 10).draw());
         }
-
-        // 记录日志
-        log.info(sb.toString());
         if (throwable != null) {
             throw throwable;
         }
