@@ -23,7 +23,7 @@ public class MybatisSqlPrintAutoConfiguration {
      * 或者通过原生的进行处理
      */
     @Configuration
-    @ConditionalOnExpression("${mybatis.print:true}")
+    @ConditionalOnExpression("${mybatis.print:false}")
     public class SupportPageHelper {
 
         @PostConstruct

@@ -36,6 +36,7 @@ import org.aspectj.lang.annotation.Pointcut;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.aop.aspectj.MethodInvocationProceedingJoinPoint;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.validation.BindingResult;
@@ -65,6 +66,9 @@ public class ControllerAop {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Value("${curl.print}")
+    boolean curlable;
+
     @Pointcut("@annotation(org.springframework.web.bind.annotation.RequestMapping) ||" +
             "@annotation(org.springframework.web.bind.annotation.GetMapping) ||" +
             "@annotation(org.springframework.web.bind.annotation.PostMapping) ||" +
@@ -78,6 +82,10 @@ public class ControllerAop {
     @Around("logAroundPointCut()")
     public Object intoControllerLog(ProceedingJoinPoint point) throws Throwable {
 
+
+        if (curlable) {
+            log.info("{}", CurlUtils.curl(request));
+        }
         Throwable throwable = null;
 
         MethodInvocationProceedingJoinPoint mjp = (MethodInvocationProceedingJoinPoint) point;

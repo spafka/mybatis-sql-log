@@ -236,6 +236,8 @@ public abstract class StringUtils {
         }
     }
 
+
+
     public static boolean hasText(String str) {
         return hasText((CharSequence)str);
     }
