@@ -83,6 +83,9 @@ public class MybatisSqlCompletePrintInterceptor implements Interceptor, Ordered 
                     Field configurationField = ReflectionUtils.findField(parameterHandler.getClass(), "configuration");
                     ReflectionUtils.makeAccessible(configurationField);
                     this.configuration = (Configuration) configurationField.get(parameterHandler);
+
+
+
                 }
 
 
@@ -92,10 +95,9 @@ public class MybatisSqlCompletePrintInterceptor implements Interceptor, Ordered 
                 if (druidExists) {
                     sql = com.alibaba.druid.sql.SQLUtils.formatMySql(sql);
                 }
-                String mybatisPlusSql = sql.replaceAll("\\s+", " ").replaceAll("` ", "`");
 
                 log.info("\n------------------------------------\n\n{}\n\n------------------------------------ cost {}ms\n",
-                        mybatisPlusSql
+                        sql
                         , sqlCost
                 );
 

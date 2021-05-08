@@ -66,7 +66,7 @@ public class ControllerAop {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @Value("${curl.print}")
+    @Value("${curl.print:false}")
     boolean curlable;
 
     @Pointcut("@annotation(org.springframework.web.bind.annotation.RequestMapping) ||" +
